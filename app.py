@@ -1,13 +1,16 @@
+import numpy as np 
 import cv2
-import pytesseract
-import numpy as np
+from matplotlib import pyplot as plt
+import imutils
+import easyocr
+import os
 
 # Configurar ruta de Tesseract (ajustar según el sistema)
 # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Windows
 
-def relevant_zone(img):
+def speed_zone(img):
     # Definir las coordenadas del polígono
-    poly = np.array([[1243, 572], [1592, 579], [1596, 72], [1237, 69]], np.int32)
+    poly = np.array([[1454,57],[1458,570],[1595,578],[1599,57]], np.int32)
     poly = poly.reshape((-1, 1, 2))  # Ajustar la forma para OpenCV
 
     # Crear una máscara negra
@@ -24,55 +27,48 @@ def relevant_zone(img):
     cut = res[y:y+h, x:x+w]
 
     # Guardar o mostrar el resultado
-    cv2.imwrite("temp/relevant_zone.jpg", cut)
+    cv2.imwrite("temp/speed_zone.jpg", cut)
     return cut
 
-def rotate_image_no_crop(image, angle):
-    (h, w) = image.shape[:2]
-    center = (w // 2, h // 2)
+original = cv2.imread("frames/frame_16.jpg")
+cv2.imwrite("temp/fr_16.png", original)
+img = speed_zone(original)
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+cv2.imwrite("temp/gray.png", cv2.cvtColor(gray, cv2.COLOR_BGR2RGB))
 
-    # Calcular la nueva dimensión de la imagen después de la rotación
-    angle_rad = np.radians(angle)
-    new_w = int(abs(h * np.sin(angle_rad)) + abs(w * np.cos(angle_rad)))
-    new_h = int(abs(h * np.cos(angle_rad)) + abs(w * np.sin(angle_rad)))
+bfilter = cv2.bilateralFilter(gray, 11, 17, 17) # for noise
+edged = cv2.Canny(bfilter, 0, 200) #Edge detection
+cv2.imwrite("temp/edged.png", cv2.cvtColor(edged, cv2.COLOR_BGR2RGB))
 
-    # Crear nueva matriz de rotación con traslación para centrar
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    M[0, 2] += (new_w - w) / 2
-    M[1, 2] += (new_h - h) / 2
+kernel = np.ones((6, 9), np.uint8) 
+dilat = cv2.dilate(edged.copy(), kernel, iterations=2)
+cv2.imwrite("temp/expanded.png", dilat)
 
-    # Aplicar la transformación con el nuevo tamaño
-    rotated_image = cv2.warpAffine(image, M, (new_w, new_h))
+keypoints = cv2.findContours(dilat.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+contours = imutils.grab_contours(keypoints)
+contours = sorted(contours, key=cv2.contourArea, reverse = True)[:10]
+locations = []
+for contour in contours:
+    approx = cv2.approxPolyDP(contour, 10, True)
+    if(len(approx) > 4):
+        locations.append(approx)
 
-    return rotated_image
+mask = np.zeros(gray.shape, np.uint8)
+for location in locations:
+    new_image = cv2.drawContours(mask, [location], 0, 255, -1)
+    new_image = cv2.bitwise_and(img, img, mask=mask)
+    cv2.imwrite("temp/new_image.png", new_image)
 
-def grayscale(img):
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+(x, y) = np.where(mask==255)
+(x1, y1) = (np.min(x), np.min(y))
+(x2, y2) = (np.max(x), np.max(y))
+cropped_image = gray[x1:x2+1, y1:y2+1]
+cv2.imwrite("temp/cropped_image.png", cropped_image)
+cv2.imwrite("temp/new_image_color.png", cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB))
 
-# Cargar la imagen
-image = cv2.imread("img.jpg")
+reader = easyocr.Reader(['en'], gpu=True)
+results = reader.readtext(cropped_image, allowlist='0123456789')
+filtered_results = [res for res in results if res[2] > 0.8]
 
-relevant_img = relevant_zone(image)
+print(filtered_results)
 
-relevant_img = cv2.GaussianBlur(relevant_img, (3,3), 0)
-kernel = np.ones((2,2), np.uint8)
-img_proc = cv2.morphologyEx(relevant_img, cv2.MORPH_OPEN, kernel)
-
-rotated_img = rotate_image_no_crop(img_proc, -6)
-
-gray_img = grayscale(rotated_img)
-cv2.imwrite("temp/gray.jpg", gray_img)
-
-inv_img = cv2.bitwise_not(gray_img)
-cv2.imwrite("temp/inv_img.jpg", inv_img)
-
-im_bw = cv2.adaptiveThreshold(inv_img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-            cv2.THRESH_BINARY,11,2)
-cv2.imwrite("temp/bw_image.jpg", im_bw)
-
-# Opciones de configuración de Tesseract
-custom_config = r'--oem 3 --psm 6 outputbase digits'  # Solo números
-
-pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
-ocr_result = pytesseract.image_to_string(im_bw, config=custom_config)
-print(ocr_result)
