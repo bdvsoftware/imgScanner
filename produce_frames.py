@@ -1,5 +1,6 @@
 import cv2
 import os
+import time
 
 def produce_frames_1hz(output_folder):
     os.makedirs(output_folder, exist_ok=True)
@@ -17,6 +18,7 @@ def produce_frames_1hz(output_folder):
 
     frame_idx = 0
     second = 0
+    index = 10000
 
     while cap.isOpened():
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -25,15 +27,16 @@ def produce_frames_1hz(output_folder):
         if not ret:
             break
 
-        filename = os.path.join(output_folder, f"frame_{second}.jpg")
+        filename = os.path.join(output_folder, f"{index}_frame_{second}.jpg")
         cv2.imwrite(filename, frame)
-        print(f"Guardado: {filename}")
+        print(f"Saved: {filename}")
 
         second += 1
         frame_idx += interval  
+        index += 1
 
     cap.release()
-    print("Proceso terminado.")
+    print("END")
 
 video_path = "video.mp4"  
 output_folder = "frames"  

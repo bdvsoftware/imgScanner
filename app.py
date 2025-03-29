@@ -77,7 +77,7 @@ with os.scandir("frames") as files:
                 cv2.imwrite("temp/cropped_image.png", cropped_image)
                 cv2.imwrite("temp/new_image_color.png", cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB))
 
-            reader = easyocr.Reader(['en'], gpu=True)
+            reader = easyocr.Reader(['en'], gpu=False)
             results = reader.readtext(cropped_image, allowlist='0123456789')
             filtered_results = [
                 {"value": res[1], "confidence": res[2], "frame": file.name}
